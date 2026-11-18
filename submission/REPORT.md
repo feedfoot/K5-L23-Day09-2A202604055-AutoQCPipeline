@@ -61,7 +61,7 @@ AP50 theo lớp (TB 2 seed), raw → clean: car 0,738 → 0,738 · person 0,822 
 chắc chắn **không** có bằng chứng pipeline làm mAP tăng. Gần như toàn bộ chênh lệch nằm ở **truck**; ba lớp còn lại khác nhau ≤ 0,01.
 
 **Giả thuyết và cách kiểm:**
-1. **Rò rỉ test làm điểm `raw` bị thổi phồng:** `raw` chứa 5 ảnh trùng test (`LEAK_TEST`: test_009, 033, 039, 044, 085 — 20 box, có 1 truck) nên model `raw` đã "thấy trước" 5% tập test; `clean` đã loại chúng.
+1. **Rò rỉ test làm điểm `raw` bị thổi phồng:** `raw` chứa 5 ảnh trùng test (`LEAK_TEST`: test_009, 033, 039, 044, 085 — 22 box, có 1 truck) nên model `raw` đã "thấy trước" 5% tập test; `clean` đã loại chúng.
    *Kiểm:* đánh giá lại cả hai model trên test **bỏ 5 ảnh này**.
 2. **Truck là lớp ít mẫu nên rất nhiễu:** test chỉ có 24 box truck / 16 ảnh; ngay trong `clean`, AP truck giữa 2 seed đã chênh 0,10 (0,590 vs 0,486). Vài box đổi đúng/sai là đủ tạo ra −0,11.
    *Kiểm:* chạy ≥ 5 seed, hoặc bootstrap tập test để có khoảng tin cậy theo lớp.
@@ -75,10 +75,13 @@ chắc chắn **không** có bằng chứng pipeline làm mAP tăng. Gần như 
 ở #81–#125 hàng đợi (ưu tiên 4 ảnh `EMPTY_LABEL` ở mục 4b) hoặc tăng ngân sách duyệt lên ~100 ảnh; **không** hạ ngưỡng `conf` chỉ để hàng đợi vừa ngân sách.
 Lưu ý: trên Windows `check_submission.py` báo `pipeline\calibrate.py` nhắc `MANIFEST`/`data/calib` — đó là file đề (sha1 khớp `scripts/_protected.json`), lỗi do so đường dẫn `\` với `/`.
 
-**(b) Dùng AI (Claude Code):
-- *Prompt chính:* "Viết `pipeline/<module>.py` theo docstring , ngưỡng đọc từ `cfg`, không sửa `data/raw`, dòng hỏng không được làm chết; chạy `pytest tests/test_<module>.py`."
+**(b) Dùng AI (Claude Code):**
+- *Prompt chính:* "Viết `pipeline/<module>.py` theo docstring, ngưỡng đọc từ `cfg`, không sửa `data/raw`, dòng hỏng không được làm chết; chạy `pytest tests/test_<module>.py`."
 - *Cách kiểm:* đọc từng hàm; chạy unit test (79/79 xanh) và thêm ca khó (1 dòng 2 lỗi, dòng trống giữa file, nhiều dự đoán/ảnh, biên đúng 10% với mẫu số 10…1000); chạy autofix 2 lần trên bản sao raw (lần 2 chỉ còn `needs_label`) và so sha1 `data/raw` trước/sau.
 - *Một lần AI sai:* bản nháp đầu của báo cáo dựa vào nhãn tham chiếu của người duyệt cho ảnh **chưa duyệt** — tức là xem đáp án lô raw (RULES.md cấm); đã sửa mục 4b chỉ dùng bằng chứng mở ảnh và báo cáo pipeline. Ngoài ra, lần kiểm đầu của `second_opinion`, AI chạy thẳng trên `data/raw` nên script chết ở 2 ảnh hỏng không có trong cache (img_0010, img_0136); thực tế pipeline loại 2 ảnh này ở bước nhận nên phải kiểm sau bước nhận. AI cũng sinh `calibration_report.md` trước khi đổi config, phải chạy lại để bảng "cấu hình hiện tại" khớp ngưỡng đã chọn.
 
-(`submission/bonus/aspect_ratio.csv`).
+*(Thưởng +3)* **Check mới `aspect_ratio`** (`pipeline/checks/aspect_ratio.py`, test `tests/test_aspect_ratio.py` — 8 test xanh): cảnh báo `BOX_ODD_ASPECT` khi cạnh dài/cạnh ngắn **tính bằng pixel** > 6:1
+(box kéo thành vệt, nhầm w/h, mẩu vật bị cắt mép); ghi `at_border` để người duyệt phân biệt vật bị cắt mép với box vẽ hỏng giữa ảnh. Ngưỡng 6:1 chọn từ khảo sát: p95 mọi lớp trên lô đã QC < 3,7:1,
+nhãn người của tập val chỉ 3/158 box vượt 6:1. Chạy `python -m pipeline.checks.aspect_ratio` trên 202 ảnh sau QC → **3 box** (`img_0042:5` người 25x241px, `img_0084:7` người 27x184px, `img_0124:6` xe 118x13px),
+cả 3 **chạm mép ảnh** — mở ảnh thấy đều là vật bị cắt ở mép, không phải lỗi vẽ → lô này không có box lệch tỉ lệ bất thường giữa ảnh (`submission/bonus/aspect_ratio.csv`).
 Check chạy riêng, **không** nằm trong `QC_CHECKS` (file đăng ký được ghim) và ngưỡng để trong code với `cfg["aspect_ratio"]` ghi đè được (config bị khoá ngoài 2 khoá CALIBRATE), nên không đổi kết luận Hold.
