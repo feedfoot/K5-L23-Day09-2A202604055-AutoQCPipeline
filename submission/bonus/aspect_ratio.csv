@@ -1,0 +1,4 @@
+check,severity,code,image,line,message,extra
+aspect_ratio,warn,BOX_ODD_ASPECT,img_0042,5,"box person quá mảnh: 25x241px (tỉ lệ 9.6:1 > 6:1) — chạm mép ảnh, có thể vật bị cắt","{""aspect"": 9.58, ""w_px"": 25.1, ""h_px"": 240.8, ""shape"": ""mảnh"", ""at_border"": true}"
+aspect_ratio,warn,BOX_ODD_ASPECT,img_0084,7,"box person quá mảnh: 27x184px (tỉ lệ 6.8:1 > 6:1) — chạm mép ảnh, có thể vật bị cắt","{""aspect"": 6.85, ""w_px"": 26.8, ""h_px"": 183.6, ""shape"": ""mảnh"", ""at_border"": true}"
+aspect_ratio,warn,BOX_ODD_ASPECT,img_0124,6,"box car quá dẹt: 118x13px (tỉ lệ 9.1:1 > 6:1) — chạm mép ảnh, có thể vật bị cắt","{""aspect"": 9.11, ""w_px"": 118.4, ""h_px"": 13.0, ""shape"": ""dẹt"", ""at_border"": true}"
