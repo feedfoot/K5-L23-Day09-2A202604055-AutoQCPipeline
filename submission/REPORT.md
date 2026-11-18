@@ -1,4 +1,4 @@
-# Báo cáo Day 09 — <Phạm Quang Huy>, 2A202604055
+# Báo cáo Day 09 — Phạm Quang Huy, 2A202604055
 
 ## 1. Kết luận trước
 **HOLD** (mã thoát 10). Lô vào **224 ảnh**; bước nhận loại **22 ảnh** → **202 ảnh** qua QC; sau sửa tự động và người duyệt **không còn lỗi bắt buộc** (`n_errors = 0`),
