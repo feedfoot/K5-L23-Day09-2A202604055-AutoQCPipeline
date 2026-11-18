@@ -34,6 +34,101 @@ import yaml  # noqa: F401
 from ..common import ERROR, parse_yolo_line  # noqa: F401
 
 
+DROP_CODES = {"BAD_FORMAT", "BAD_CLASS_ID", "BOX_ZERO", "DUP_BOX"}
+CLIP_CODE = "BOX_OUT_OF_IMAGE"
+REMOVE_CODES = {"LEAK_TEST", "CORRUPT_IMAGE", "BAD_SIZE"}          # cộng mọi mã bắt đầu bằng DUP_IMAGE_
+
+
+def _is_remove(code):
+    return code in REMOVE_CODES or code.startswith("DUP_IMAGE_")
+
+
+def _fx(image, line, action, before, after):
+    return {"image": image, "line": line, "action": action, "before": before, "after": after}
+
+
+def _clip(text):
+    """Cắt box về trong [0,1]. Trả về dòng mới, hoặc None nếu box không còn diện tích / không đọc được."""
+    try:
+        c, cx, cy, w, h = parse_yolo_line(text)
+    except ValueError:
+        return None
+    x1, x2 = max(0.0, cx - w / 2), min(1.0, cx + w / 2)
+    y1, y2 = max(0.0, cy - h / 2), min(1.0, cy + h / 2)
+    nw, nh = x2 - x1, y2 - y1
+    if nw <= 0 or nh <= 0:
+        return None
+    return f"{c} {(x1 + x2) / 2:.6f} {(y1 + y2) / 2:.6f} {nw:.6f} {nh:.6f}"
+
+
 def fix(ds, issues, cfg):
-    # TODO
-    raise NotImplementedError("autofix chưa làm")
+    errors = [i for i in issues if i.severity == ERROR]             # WARN là việc của người: không đụng
+    fixes = []
+
+    # 1) Xoá ảnh (trùng / rò rỉ test / hỏng / quá nhỏ): làm TRƯỚC để bỏ qua issue dòng của ảnh đã xoá.
+    removed = set()
+    for i in errors:
+        if not _is_remove(i.code) or i.image in removed:
+            continue
+        removed.add(i.image)
+        img, lab = ds.image_path(i.image), ds.label_path(i.image)
+        gone = []
+        if img is not None and img.exists():
+            img.unlink()
+            gone.append(img.name)
+        if lab.exists():
+            lab.unlink()
+            gone.append(lab.name)
+        if gone:
+            fixes.append(_fx(i.image, None, "remove_image", " + ".join(gone), f"đã xoá ({i.code})"))
+
+    # 2) Tên lớp trong data.yaml: ghi lại đúng cfg["classes"] (một lần dù có nhiều issue).
+    if any(i.code == "BAD_CLASS_NAME" for i in errors):
+        try:
+            d = yaml.safe_load(ds.yaml_path.read_text(encoding="utf-8")) if ds.yaml_path.exists() else None
+        except yaml.YAMLError:
+            d = None
+        d = d if isinstance(d, dict) else {}
+        old = d.get("names")
+        d["names"] = {k: n for k, n in enumerate(cfg["classes"])}
+        ds.yaml_path.write_text(yaml.safe_dump(d, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        fixes.append(_fx("data.yaml", None, "rename_classes", str(old), str(d["names"])))
+
+    # 3) Thiếu file nhãn: KHÔNG tạo file (rỗng = "ảnh nền"), chỉ ghi lại để chuyển người gán.
+    needs = set()
+    for i in errors:
+        if i.code == "MISSING_LABEL_FILE" and i.image not in removed and i.image not in needs:
+            needs.add(i.image)
+            fixes.append(_fx(i.image, None, "needs_label", "(không có file)", "chuyển người gán"))
+
+    # 4) Lỗi theo dòng: gom theo file -> {số dòng GỐC: {mã lỗi}}, rồi ghi lại file MỘT lần.
+    by_file = defaultdict(lambda: defaultdict(set))
+    for i in errors:
+        if i.line is not None and (i.code in DROP_CODES or i.code == CLIP_CODE) and i.image not in removed:
+            by_file[i.image][i.line].add(i.code)
+
+    for stem in sorted(by_file):
+        path = ds.label_path(stem)
+        if not path.exists():
+            continue
+        raw = path.read_text(encoding="utf-8", errors="replace").splitlines()   # giữ dòng trống -> số dòng không lệch
+        keep, changed = [], False
+        for lno, text in enumerate(raw, 1):
+            codes = by_file[stem].get(lno)
+            if not codes:
+                keep.append(text)
+                continue
+            if codes & DROP_CODES:                                   # xoá thắng cắt: chỉ 1 fix drop_line
+                fixes.append(_fx(stem, lno, "drop_line", text, f"(xoá: {', '.join(sorted(codes & DROP_CODES))})"))
+                changed = True
+                continue
+            new = _clip(text)                                        # chỉ còn BOX_OUT_OF_IMAGE
+            if new is None:                                          # nằm hẳn ngoài ảnh: xoá thay vì box rỗng
+                fixes.append(_fx(stem, lno, "drop_line", text, "(xoá: box nằm ngoài ảnh)"))
+            else:
+                fixes.append(_fx(stem, lno, "clip_box", text, new))
+                keep.append(new)
+            changed = True
+        if changed:
+            path.write_text("".join(ln + "\n" for ln in keep), encoding="utf-8")
+    return fixes
